@@ -1,0 +1,159 @@
+buffer.java
+
+import java.util.LinkedList;
+import java.util.Queue;
+
+class Buffer {
+    private final Queue<Integer> data = new LinkedList<>();
+    private final int capacity = 100;
+    
+    public synchronized void put(int value) throws InterruptedException {
+        while (data.size() == capacity) {
+            wait(); // Aguarda se o buffer estiver cheio
+        }
+        data.add(value);
+        System.out.println("Inserted: " + value + " | Buffer size: " + data.size());
+        notifyAll(); // Notifica consumidores
+    }
+    
+    public synchronized int remove() throws InterruptedException {
+        while (data.isEmpty()) {
+            wait(); // Aguarda se o buffer estiver vazio
+        }
+        int value = data.poll();
+        System.out.println("Removed: " + value + " | Buffer size: " + data.size());
+        notifyAll(); // Notifica produtores
+        return value;
+    }
+    
+    public synchronized void reinsert(int value) throws InterruptedException {
+        while (data.size() == capacity) {
+            wait();
+        }
+        data.add(value);
+        System.out.println("Reinserted: " + value + " | Buffer size: " + data.size());
+        notifyAll();
+    }
+}
+
+
+PPProducer.java
+
+class Producer implements Runnable {
+    private final Buffer buffer;
+    private final int maxItems;
+    private final int sleepTime;
+    private final int id;
+    
+    public Producer(int id, Buffer buffer, int maxItems, int sleepTime) {
+        this.id = id;
+        this.buffer = buffer;
+        this.maxItems = maxItems;
+        this.sleepTime = sleepTime;
+    }
+    
+    @Override
+    public void run() {
+        for (int i = 0; i < maxItems; i++) {
+            try {
+                Thread.sleep(sleepTime);
+                int item = (int) (Math.random() * 100);
+                System.out.println("Producer " + id + " produced item " + item);
+                buffer.put(item);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        System.out.println("Producer " + id + " finished");
+    }
+}
+
+Consummer.java
+
+class Consumer implements Runnable {
+    private final Buffer buffer;
+    private final int sleepTime;
+    private final int id;
+    private final String type;
+    
+    public Consumer(int id, Buffer buffer, int sleepTime, String type) {
+        this.id = id;
+        this.buffer = buffer;
+        this.sleepTime = sleepTime;
+        this.type = type;
+    }
+    
+    private boolean shouldConsume(int item) {
+        return (type.equals("even") && item % 2 == 0) ||
+               (type.equals("odd") && item % 2 != 0);
+    }
+    
+    @Override
+    public void run() {
+        try {
+            while (true) {
+                int item = buffer.remove();
+                
+                if (shouldConsume(item)) {
+                    System.out.println("Consumer " + id + " (" + type + ") consumed item " + item);
+                    Thread.sleep(sleepTime);
+                } else {
+                    buffer.reinsert(item);
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+
+main
+
+public class Main {
+    public static void main(String[] args) {
+        if (args.length != 5) {
+            System.out.println("Use: java Main <num_producers> <max_items_per_producer> <producing_time> <num_consumers> <consuming_time>");
+            return;
+        }
+        
+        int numProducers = Integer.parseInt(args[0]);
+        int maxItemsPerProducer = Integer.parseInt(args[1]);
+        int producingTime = Integer.parseInt(args[2]);
+        int numConsumers = Integer.parseInt(args[3]);
+        int consumingTime = Integer.parseInt(args[4]);
+        
+        Buffer buffer = new Buffer();
+        
+        // Criar e iniciar produtores
+        Thread[] producerThreads = new Thread[numProducers];
+        for (int i = 1; i <= numProducers; i++) {
+            Producer producer = new Producer(i, buffer, maxItemsPerProducer, producingTime);
+            producerThreads[i-1] = new Thread(producer);
+            producerThreads[i-1].start();
+        }
+        
+        // Criar e iniciar consumidores (metade pares, metade ímpares)
+        Thread[] consumerThreads = new Thread[numConsumers];
+        for (int i = 1; i <= numConsumers; i++) {
+            String type = (i % 2 == 0) ? "even" : "odd";
+            Consumer consumer = new Consumer(i, buffer, consumingTime, type);
+            consumerThreads[i-1] = new Thread(consumer);
+            consumerThreads[i-1].start();
+        }
+        
+        // Aguardar término dos produtores
+        for (Thread t : producerThreads) {
+            try {
+                t.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        
+        // Interromper consumidores após produção terminar
+        for (Thread t : consumerThreads) {
+            t.interrupt();
+        }
+    }
+}
