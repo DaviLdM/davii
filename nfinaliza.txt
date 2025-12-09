@@ -1,0 +1,131 @@
+class Producer implements Runnable {
+    private final Buffer buffer;
+    private final int maxItems;
+    private final int sleepTime;
+    private final int id;
+
+    public Producer(int id, Buffer buffer, int maxItems, int sleepTime) {
+        this.id = id;
+        this.buffer = buffer;
+        this.maxItems = maxItems;
+        this.sleepTime = sleepTime;
+    }
+
+    // mantém o método se quiser, mas o Thread usa run()
+    public void produce() throws InterruptedException {
+        for (int i = 0; i < maxItems; i++) {
+            Thread.sleep(sleepTime);
+            int item = (int) (Math.random() * 100);
+            System.out.println("Producer " + id + " produced item " + item);
+            buffer.put(item);
+        }
+    }
+
+    @Override
+    public void run() {
+        try {
+            produce();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+
+
+class Consumer implements Runnable {
+    private final Buffer buffer;
+    private final int sleepTime;
+    private final int id;
+
+    public Consumer(int id, Buffer buffer, int sleepTime) {
+        this.id = id;
+        this.buffer = buffer;
+        this.sleepTime = sleepTime;
+    }
+
+    public void process() throws InterruptedException {
+        while (true) {
+            int item = buffer.remove();
+            System.out.println("Consumer " + id + " consumed item " + item);
+            Thread.sleep(sleepTime);
+        }
+    }
+
+    @Override
+    public void run() {
+        try {
+            process();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+
+
+public class Main {
+    public static void main(String[] args) {
+        if (args.length != 5) {
+            System.out.println("Use: java Main <num_producers> <max_items_per_producer> <producing_time> <num_consumers> <consuming_time>");
+            return;
+        }
+
+        int numProducers = Integer.parseInt(args[0]);
+        int maxItemsPerProducer = Integer.parseInt(args[1]);
+        int producingTime = Integer.parseInt(args[2]);
+        int numConsumers = Integer.parseInt(args[3]);
+        int consumingTime = Integer.parseInt(args[4]);
+
+        Buffer buffer = new Buffer();
+
+        // produtores
+        for (int i = 1; i <= numProducers; i++) {
+            Thread t = new Thread(new Producer(i, buffer, maxItemsPerProducer, producingTime));
+            t.start();
+        }
+
+        // consumidores
+        for (int i = 1; i <= numConsumers; i++) {
+            Thread t = new Thread(new Consumer(i, buffer, consumingTime));
+            t.start();
+        }
+    }
+}
+
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Semaphore;
+
+class Buffer {
+    private final List<Integer> data = new ArrayList<>();
+    private final int capacity = 50;
+
+    // semáforos
+    private final Semaphore mutex = new Semaphore(1);          // exclusão mútua
+    private final Semaphore empty = new Semaphore(capacity);    // espaços vazios
+    private final Semaphore full = new Semaphore(0);             // itens disponíveis
+
+    public void put(int value) throws InterruptedException {
+        empty.acquire();      // espera espaço vazio
+        mutex.acquire();      // exclusão mútua
+
+        data.add(value);
+        System.out.println("Inserted: " + value + " | Buffer size: " + data.size());
+
+        mutex.release();
+        full.release();       // sinaliza que existe 1 item novo
+    }
+
+    public int remove() throws InterruptedException {
+        full.acquire();       // espera item disponível
+        mutex.acquire();      // exclusão mútua
+
+        int value = data.remove(0);
+        System.out.println("Removed: " + value + " | Buffer size: " + data.size());
+
+        mutex.release();
+        empty.release();      // libera espaço no buffer
+
+        return value;
+    }
+}
